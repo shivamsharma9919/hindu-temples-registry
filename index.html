@@ -60,8 +60,8 @@
   </div>
 
   <div class="status-bar">
-    <span class="badge" id="dataCounter">Downloading Data...</span>
-    <span style="font-size: 13px; color: #64748b;">Direct Multi-Source Loader v2</span>
+    <span class="badge" id="dataCounter">Downloading Data (~60MB)...</span>
+    <span style="font-size: 13px; color: #64748b;">Direct Hosted Same-Origin Dataset v3</span>
   </div>
 
   <div id="templesList" class="temple-grid">
@@ -70,13 +70,8 @@
 </div>
 
 <script>
-  const URLS = [
-    // Direct GitHub release binary redirect
-    'https://github.com/shivamsharma9919/hindu-temples-registry/releases/download/v1.0/all_countries_hierarchical_temples.json.gz',
-    // Fast CDN mirrors
-    'https://objects.githubusercontent.com/github-production-release-asset-2e65be/shivamsharma9919/hindu-temples-registry/releases/download/v1.0/all_countries_hierarchical_temples.json.gz',
-    'https://corsproxy.io/?url=' + encodeURIComponent('https://github.com/shivamsharma9919/hindu-temples-registry/releases/download/v1.0/all_countries_hierarchical_temples.json.gz')
-  ];
+  // Same domain local file path (No external CORS proxy needed)
+  const DATA_URL = './all_countries_hierarchical_temples.json.gz';
 
   const countrySelect = document.getElementById('countrySelect');
   const stateSelect = document.getElementById('stateSelect');
@@ -86,60 +81,42 @@
 
   let dbData = [];
 
-  async function loadData() {
-    let rawBuffer = null;
-    let successUrl = '';
-
-    for (let u of URLS) {
+  fetch(DATA_URL)
+    .then(res => {
+      if (!res.ok) throw new Error('Data file download failed: HTTP ' + res.status);
+      return res.arrayBuffer();
+    })
+    .then(buffer => {
+      dataCounter.textContent = 'Decompressing Data...';
+      let jsonText;
       try {
-        dataCounter.textContent = 'Connecting...';
-        const res = await fetch(u, { mode: 'cors' });
-        if (res.ok) {
-          rawBuffer = await res.arrayBuffer();
-          successUrl = u;
-          break;
-        }
-      } catch (err) {
-        console.warn('Endpoint failed:', u, err);
+        jsonText = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
+      } catch (e) {
+        const decoder = new TextDecoder('utf-8');
+        jsonText = decoder.decode(buffer);
       }
-    }
+      dbData = JSON.parse(jsonText);
 
-    if (!rawBuffer) {
-      throw new Error('CORS block / Network error. Dono URLs se connect nahi hua.');
-    }
+      countrySelect.innerHTML = '<option value="">-- Choose Country --</option>';
+      const countries = Array.isArray(dbData) ? dbData : (dbData.countries || []);
+      
+      countries.forEach((c, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx;
+        const totalStates = c.states ? c.states.length : 0;
+        opt.textContent = `${c.name || c.country_name || 'Country'} - ${totalStates} States`;
+        countrySelect.appendChild(opt);
+      });
 
-    dataCounter.textContent = 'Decompressing (~60MB)...';
-    let jsonText;
-    try {
-      jsonText = pako.ungzip(new Uint8Array(rawBuffer), { to: 'string' });
-    } catch(e) {
-      const dec = new TextDecoder('utf-8');
-      jsonText = dec.decode(rawBuffer);
-    }
-
-    dbData = JSON.parse(jsonText);
-
-    countrySelect.innerHTML = '<option value="">-- Choose Country --</option>';
-    const countries = Array.isArray(dbData) ? dbData : (dbData.countries || []);
-    
-    countries.forEach((c, idx) => {
-      const opt = document.createElement('option');
-      opt.value = idx;
-      const totalStates = c.states ? c.states.length : 0;
-      opt.textContent = `${c.name || c.country_name || 'Country'} - ${totalStates} States`;
-      countrySelect.appendChild(opt);
+      countrySelect.disabled = false;
+      dataCounter.textContent = 'Ready';
+      templesList.innerHTML = '<div class="empty-state">Pehle Country, State aur City select kijiye.</div>';
+    })
+    .catch(err => {
+      console.error(err);
+      dataCounter.textContent = 'Failed to load data';
+      templesList.innerHTML = `<div class="empty-state" style="color: #dc2626;">Data load karne me problem aayi.<br><small>${err.message}</small></div>`;
     });
-
-    countrySelect.disabled = false;
-    dataCounter.textContent = 'Ready';
-    templesList.innerHTML = '<div class="empty-state">Pehle Country, State aur City select kijiye.</div>';
-  }
-
-  loadData().catch(err => {
-    console.error(err);
-    dataCounter.textContent = 'Failed to load data';
-    templesList.innerHTML = `<div class="empty-state" style="color: #dc2626;">Data load karne me problem aayi.<br><small>${err.message}</small></div>`;
-  });
 
   countrySelect.addEventListener('change', function() {
     stateSelect.innerHTML = '<option value="">-- Choose State --</option>';
