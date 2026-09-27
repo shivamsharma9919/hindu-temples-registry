@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Temple Hierarchy Explorer</title>
-  <!-- Fast client-side GZIP decompressor -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -61,23 +60,22 @@
   </div>
 
   <div class="status-bar">
-    <span class="badge" id="dataCounter">Downloading Data (~60MB)...</span>
-    <span style="font-size: 13px; color: #64748b;">Source: <code>GitHub Release via High-Speed Proxy</code></span>
+    <span class="badge" id="dataCounter">Downloading Data...</span>
+    <span style="font-size: 13px; color: #64748b;">Direct Multi-Source Loader v2</span>
   </div>
 
   <div id="templesList" class="temple-grid">
-    <div class="empty-state">Master temple registry download aur initialize ho raha hai, kripya thoda intezar karein...</div>
+    <div class="empty-state">Master temple registry download ho raha hai, kripya thoda intezar karein...</div>
   </div>
 </div>
 
 <script>
-  const RAW_URL = 'https://github.com/shivamsharma9919/hindu-temples-registry/releases/download/v1.0/all_countries_hierarchical_temples.json.gz';
-  
-  // CORS fallback endpoints
-  const ENDPOINTS = [
-    'https://corsproxy.io/?' + encodeURIComponent(RAW_URL),
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(RAW_URL),
-    RAW_URL
+  const URLS = [
+    // Direct GitHub release binary redirect
+    'https://github.com/shivamsharma9919/hindu-temples-registry/releases/download/v1.0/all_countries_hierarchical_temples.json.gz',
+    // Fast CDN mirrors
+    'https://objects.githubusercontent.com/github-production-release-asset-2e65be/shivamsharma9919/hindu-temples-registry/releases/download/v1.0/all_countries_hierarchical_temples.json.gz',
+    'https://corsproxy.io/?url=' + encodeURIComponent('https://github.com/shivamsharma9919/hindu-temples-registry/releases/download/v1.0/all_countries_hierarchical_temples.json.gz')
   ];
 
   const countrySelect = document.getElementById('countrySelect');
@@ -88,55 +86,60 @@
 
   let dbData = [];
 
-  async function fetchWithFallback() {
-    let lastError = null;
-    for (const url of ENDPOINTS) {
+  async function loadData() {
+    let rawBuffer = null;
+    let successUrl = '';
+
+    for (let u of URLS) {
       try {
-        dataCounter.textContent = 'Downloading Data (~60MB)...';
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('Status ' + res.status);
-        const buffer = await res.arrayBuffer();
-        return buffer;
-      } catch (e) {
-        lastError = e;
-        console.warn('Endpoint failed, trying next:', url, e);
+        dataCounter.textContent = 'Connecting...';
+        const res = await fetch(u, { mode: 'cors' });
+        if (res.ok) {
+          rawBuffer = await res.arrayBuffer();
+          successUrl = u;
+          break;
+        }
+      } catch (err) {
+        console.warn('Endpoint failed:', u, err);
       }
     }
-    throw lastError || new Error('Failed to fetch from all endpoints');
+
+    if (!rawBuffer) {
+      throw new Error('CORS block / Network error. Dono URLs se connect nahi hua.');
+    }
+
+    dataCounter.textContent = 'Decompressing (~60MB)...';
+    let jsonText;
+    try {
+      jsonText = pako.ungzip(new Uint8Array(rawBuffer), { to: 'string' });
+    } catch(e) {
+      const dec = new TextDecoder('utf-8');
+      jsonText = dec.decode(rawBuffer);
+    }
+
+    dbData = JSON.parse(jsonText);
+
+    countrySelect.innerHTML = '<option value="">-- Choose Country --</option>';
+    const countries = Array.isArray(dbData) ? dbData : (dbData.countries || []);
+    
+    countries.forEach((c, idx) => {
+      const opt = document.createElement('option');
+      opt.value = idx;
+      const totalStates = c.states ? c.states.length : 0;
+      opt.textContent = `${c.name || c.country_name || 'Country'} - ${totalStates} States`;
+      countrySelect.appendChild(opt);
+    });
+
+    countrySelect.disabled = false;
+    dataCounter.textContent = 'Ready';
+    templesList.innerHTML = '<div class="empty-state">Pehle Country, State aur City select kijiye.</div>';
   }
 
-  fetchWithFallback()
-    .then(buffer => {
-      dataCounter.textContent = 'Decompressing Data...';
-      let jsonText;
-      try {
-        jsonText = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
-      } catch (e) {
-        const decoder = new TextDecoder('utf-8');
-        jsonText = decoder.decode(buffer);
-      }
-      dbData = JSON.parse(jsonText);
-
-      countrySelect.innerHTML = '<option value="">-- Choose Country --</option>';
-      const countries = Array.isArray(dbData) ? dbData : (dbData.countries || []);
-      
-      countries.forEach((c, idx) => {
-        const opt = document.createElement('option');
-        opt.value = idx;
-        const totalStates = c.states ? c.states.length : 0;
-        opt.textContent = `${c.name || c.country_name || 'Country'} - ${totalStates} States`;
-        countrySelect.appendChild(opt);
-      });
-
-      countrySelect.disabled = false;
-      dataCounter.textContent = 'Ready';
-      templesList.innerHTML = '<div class="empty-state">Pehle Country, State aur City select kijiye.</div>';
-    })
-    .catch(err => {
-      console.error(err);
-      dataCounter.textContent = 'Failed to load data';
-      templesList.innerHTML = `<div class="empty-state" style="color: #dc2626;">Data load karne me problem aayi.<br><small>${err.message}</small></div>`;
-    });
+  loadData().catch(err => {
+    console.error(err);
+    dataCounter.textContent = 'Failed to load data';
+    templesList.innerHTML = `<div class="empty-state" style="color: #dc2626;">Data load karne me problem aayi.<br><small>${err.message}</small></div>`;
+  });
 
   countrySelect.addEventListener('change', function() {
     stateSelect.innerHTML = '<option value="">-- Choose State --</option>';
