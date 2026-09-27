@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Temple Hierarchy Explorer</title>
+  <!-- Fast client-side GZIP decompressor -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background-color: #f8fafc; color: #1e293b; margin: 0; padding: 25px; }
@@ -44,7 +47,7 @@
     <div class="grid">
       <div>
         <label>1. Select Country</label>
-        <select id="countrySelect"><option value="">-- Choose Country --</option></select>
+        <select id="countrySelect" disabled><option value="">Master Database Loading...</option></select>
       </div>
       <div>
         <label>2. Select State</label>
@@ -58,128 +61,177 @@
   </div>
 
   <div class="status-bar">
-    <span class="badge" id="dataCounter">Ready</span>
-    <span style="font-size: 13px; color: #64748b;">Source: <code>all_countries_hierarchical_temples.json</code></span>
+    <span class="badge" id="dataCounter">Downloading Data (~60MB)...</span>
+    <span style="font-size: 13px; color: #64748b;">Source: <code>GitHub Release CDN (GZ Compressed)</code></span>
   </div>
 
   <div id="templesList" class="temple-grid">
-    <div class="empty-state">Pehle Country, State aur City select kijiye.</div>
+    <div class="empty-state">Master temple registry download aur initialize ho raha hai, kripya thoda intezar karein...</div>
   </div>
 </div>
 
 <script>
+  const DATA_URL = 'https://github.com/shivamsharma9919/hindu-temples-registry/releases/download/v1.0/all_countries_hierarchical_temples.json.gz';
+
   const countrySelect = document.getElementById('countrySelect');
   const stateSelect = document.getElementById('stateSelect');
   const citySelect = document.getElementById('citySelect');
   const templesList = document.getElementById('templesList');
   const dataCounter = document.getElementById('dataCounter');
 
-  fetch('/api/countries?t=' + Date.now())
-    .then(r => r.json())
-    .then(data => {
-      data.forEach(c => {
+  let dbData = [];
+
+  // Master compressed JSON load aur decompress karna
+  fetch(DATA_URL)
+    .then(res => {
+      if (!res.ok) throw new Error('Network error: ' + res.status);
+      return res.arrayBuffer();
+    })
+    .then(buffer => {
+      dataCounter.textContent = 'Decompressing Data...';
+      let jsonText;
+      try {
+        jsonText = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
+      } catch (e) {
+        // Fallback agar direct binary text ho
+        const decoder = new TextDecoder('utf-8');
+        jsonText = decoder.decode(buffer);
+      }
+      dbData = JSON.parse(jsonText);
+
+      // Countries populate karna
+      countrySelect.innerHTML = '<option value="">-- Choose Country --</option>';
+      const countries = Array.isArray(dbData) ? dbData : (dbData.countries || []);
+      
+      countries.forEach((c, idx) => {
         const opt = document.createElement('option');
-        opt.value = c.id;
-        opt.textContent = `${c.name} (${c.code || ''}) - ${c.total_states} States`;
+        opt.value = idx;
+        const totalStates = c.states ? c.states.length : 0;
+        opt.textContent = `${c.name || c.country_name || 'Country'} - ${totalStates} States`;
         countrySelect.appendChild(opt);
       });
+
+      countrySelect.disabled = false;
+      dataCounter.textContent = 'Ready';
+      templesList.innerHTML = '<div class="empty-state">Pehle Country, State aur City select kijiye.</div>';
+    })
+    .catch(err => {
+      console.error(err);
+      dataCounter.textContent = 'Failed to load data';
+      templesList.innerHTML = `<div class="empty-state" style="color: #dc2626;">Data load karne me problem aayi. Check console log.<br><small>${err.message}</small></div>`;
     });
 
+  // Country change listener
   countrySelect.addEventListener('change', function() {
     stateSelect.innerHTML = '<option value="">-- Choose State --</option>';
     citySelect.innerHTML = '<option value="">-- Choose City --</option>';
+    stateSelect.disabled = true;
     citySelect.disabled = true;
     templesList.innerHTML = '<div class="empty-state">Ab State select kijiye.</div>';
     dataCounter.textContent = 'Ready';
-    if (!this.value) return;
 
-    fetch(`/api/states?country_id=${this.value}&t=` + Date.now())
-      .then(r => r.json())
-      .then(states => {
-        states.forEach(s => {
-          const opt = document.createElement('option');
-          opt.value = s.id;
-          opt.textContent = `${s.name} (${s.total_cities} cities, ${s.total_temples} temples)`;
-          stateSelect.appendChild(opt);
-        });
-        stateSelect.disabled = false;
-      });
+    if (this.value === '') return;
+
+    const countries = Array.isArray(dbData) ? dbData : (dbData.countries || []);
+    const selectedCountry = countries[this.value];
+    const states = selectedCountry.states || [];
+
+    states.forEach((s, idx) => {
+      const opt = document.createElement('option');
+      opt.value = idx;
+      const totalCities = s.cities ? s.cities.length : 0;
+      opt.textContent = `${s.name || s.state_name || 'State'} (${totalCities} cities)`;
+      stateSelect.appendChild(opt);
+    });
+
+    stateSelect.disabled = false;
   });
 
+  // State change listener
   stateSelect.addEventListener('change', function() {
     citySelect.innerHTML = '<option value="">-- Choose City --</option>';
+    citySelect.disabled = true;
     templesList.innerHTML = '<div class="empty-state">Ab City select kijiye.</div>';
     dataCounter.textContent = 'Ready';
-    if (!this.value) return;
 
-    fetch(`/api/cities?country_id=${countrySelect.value}&state_id=${this.value}&t=` + Date.now())
-      .then(r => r.json())
-      .then(cities => {
-        if (cities.length === 0) {
-          citySelect.innerHTML = '<option value="">-- No Cities Found in this State --</option>';
-          citySelect.disabled = false;
-          return;
-        }
-        citySelect.innerHTML = '<option value="">-- Choose City --</option>';
-        cities.forEach(ci => {
-          const opt = document.createElement('option');
-          opt.value = ci.id;
-          opt.textContent = `${ci.name} (${ci.total_temples} Temples)`;
-          citySelect.appendChild(opt);
-        });
-        citySelect.disabled = false;
-      });
+    if (this.value === '') return;
+
+    const countries = Array.isArray(dbData) ? dbData : (dbData.countries || []);
+    const selectedCountry = countries[countrySelect.value];
+    const states = selectedCountry.states || [];
+    const selectedState = states[this.value];
+    const cities = selectedState.cities || [];
+
+    if (cities.length === 0) {
+      citySelect.innerHTML = '<option value="">-- No Cities Found --</option>';
+      return;
+    }
+
+    cities.forEach((ci, idx) => {
+      const opt = document.createElement('option');
+      opt.value = idx;
+      const totalTemples = ci.temples ? ci.temples.length : 0;
+      opt.textContent = `${ci.name || ci.city_name || 'City'} (${totalTemples} Temples)`;
+      citySelect.appendChild(opt);
+    });
+
+    citySelect.disabled = false;
   });
 
+  // City change listener (Temples render karna)
   citySelect.addEventListener('change', function() {
-    if (!this.value) return;
-    const selectedCity = citySelect.options[citySelect.selectedIndex].text.split('(')[0].trim();
-    templesList.innerHTML = '<div class="empty-state">Temples load ho rahe hain...</div>';
+    if (this.value === '') return;
 
-    fetch(`/api/temples?country_id=${countrySelect.value}&state_id=${stateSelect.value}&city_id=${this.value}&t=` + Date.now())
-      .then(r => r.json())
-      .then(cityObj => {
-        const temples = cityObj.temples || [];
-        dataCounter.textContent = `Temples in ${selectedCity}: ${temples.length}`;
+    const countries = Array.isArray(dbData) ? dbData : (dbData.countries || []);
+    const selectedCountry = countries[countrySelect.value];
+    const selectedState = selectedCountry.states[stateSelect.value];
+    const selectedCityObj = selectedState.cities[this.value];
+    const selectedCityName = selectedCityObj.name || selectedCityObj.city_name || 'City';
+    const temples = selectedCityObj.temples || [];
 
-        if (temples.length === 0) {
-          templesList.innerHTML = `<div class="empty-state">Is city (${selectedCity}) me abhi koi temple mapped nahi hai.</div>`;
-          return;
-        }
+    dataCounter.textContent = `Temples in ${selectedCityName}: ${temples.length}`;
 
-        templesList.innerHTML = '';
-        temples.forEach(t => {
-          const card = document.createElement('div');
-          card.className = 'temple-card';
-          
-          const gSearch = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(t.temple_name + ' ' + selectedCity + ' temple')}`;
-          
-          let imgHtml = '';
-          if (t.image_url) {
-            imgHtml = `
-              <div class="img-container">
-                <img class="temple-img" src="${t.image_url}" alt="${t.temple_name}" onerror="this.parentElement.innerHTML='<div class=\\'fallback-box\\'>🛕</div>'">
-              </div>
-            `;
-          } else {
-            imgHtml = `<div class="img-container"><div class="fallback-box">🛕</div></div>`;
-          }
+    if (temples.length === 0) {
+      templesList.innerHTML = `<div class="empty-state">Is city (${selectedCityName}) me abhi koi temple mapped nahi hai.</div>`;
+      return;
+    }
 
-          card.innerHTML = `
-            ${imgHtml}
-            <div class="temple-body">
-              <div class="temple-name">${t.temple_name}</div>
-              <div class="temple-deity">Deity: ${t.deity || 'Hindu Deity'}</div>
-              <div class="temple-desc">${t.why_famous ? t.why_famous.substring(0, 140) + '...' : ''}</div>
-              <div class="temple-footer">
-                <a href="${gSearch}" target="_blank" class="photo-btn">🔍 View Real Photos</a>
-                <span class="temple-id">ID: #${t.temple_id}</span>
-              </div>
-            </div>
-          `;
-          templesList.appendChild(card);
-        });
-      });
+    templesList.innerHTML = '';
+    temples.forEach(t => {
+      const card = document.createElement('div');
+      card.className = 'temple-card';
+
+      const templeName = t.name || t.temple_name || 'Ancient Temple';
+      const deity = t.deity || 'Hindu Deity';
+      const desc = t.why_famous || t.description || '';
+      const templeId = t.id || t.temple_id || 'N/A';
+      const gSearch = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(templeName + ' ' + selectedCityName + ' temple')}`;
+
+      let imgHtml = '';
+      if (t.image_url) {
+        imgHtml = `
+          <div class="img-container">
+            <img class="temple-img" src="${t.image_url}" alt="${templeName}" onerror="this.parentElement.innerHTML='<div class=\\'fallback-box\\'>🛕</div>'">
+          </div>
+        `;
+      } else {
+        imgHtml = `<div class="img-container"><div class="fallback-box">🛕</div></div>`;
+      }
+
+      card.innerHTML = `
+        ${imgHtml}
+        <div class="temple-body">
+          <div class="temple-name">${templeName}</div>
+          <div class="temple-deity">Deity: ${deity}</div>
+          <div class="temple-desc">${desc ? desc.substring(0, 140) + '...' : ''}</div>
+          <div class="temple-footer">
+            <a href="${gSearch}" target="_blank" class="photo-btn">🔍 View Real Photos</a>
+            <span class="temple-id">ID: #${templeId}</span>
+          </div>
+        </div>
+      `;
+      templesList.appendChild(card);
+    });
   });
 </script>
 </body>
