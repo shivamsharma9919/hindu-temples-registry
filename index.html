@@ -61,16 +61,15 @@
 
   <div class="status-bar">
     <span class="badge" id="dataCounter">Downloading Data (~60MB)...</span>
-    <span style="font-size: 13px; color: #64748b;">Direct Hosted Same-Origin Dataset v3</span>
+    <span style="font-size: 13px; color: #64748b;">Direct Hosted Same-Origin Dataset v4</span>
   </div>
 
   <div id="templesList" class="temple-grid">
-    <div class="empty-state">Master temple registry download ho raha hai, kripya thoda intezar karein...</div>
+    <div class="empty-state">Master temple registry load ho raha hai, kripya thoda intezar karein...</div>
   </div>
 </div>
 
 <script>
-  // Same domain local file path (No external CORS proxy needed)
   const DATA_URL = './all_countries_hierarchical_temples.json.gz';
 
   const countrySelect = document.getElementById('countrySelect');
@@ -88,13 +87,16 @@
     })
     .then(buffer => {
       dataCounter.textContent = 'Decompressing Data...';
+      const u8 = new Uint8Array(buffer);
       let jsonText;
-      try {
-        jsonText = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
-      } catch (e) {
-        const decoder = new TextDecoder('utf-8');
-        jsonText = decoder.decode(buffer);
+
+      // GZIP magic header 0x1f 0x8b check
+      if (u8[0] === 0x1f && u8[1] === 0x8b) {
+        jsonText = pako.ungzip(u8, { to: 'string' });
+      } else {
+        jsonText = new TextDecoder('utf-8').decode(u8);
       }
+
       dbData = JSON.parse(jsonText);
 
       countrySelect.innerHTML = '<option value="">-- Choose Country --</option>';
