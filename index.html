@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Temple Hierarchy Explorer</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #f8fafc; color: #1e293b; margin: 0; padding: 25px; }
+    .container { max-width: 1250px; margin: 0 auto; }
+    h1 { text-align: center; color: #0f172a; margin-bottom: 20px; font-weight: 700; }
+    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; border: 1px solid #e2e8f0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 15px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; color: #475569; font-size: 14px; }
+    select { width: 100%; padding: 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; outline: none; background: white; color: #0f172a; }
+    select:disabled { background-color: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
+    
+    .status-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+    .badge { background: #ea580c; color: white; padding: 5px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+    
+    .temple-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 22px; }
+    .temple-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; display: flex; flex-direction: column; }
+    
+    .img-container { width: 100%; height: 210px; background: #e2e8f0; position: relative; }
+    .temple-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .fallback-box { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #ffedd5, #fed7aa); font-size: 48px; }
+    
+    .temple-body { padding: 18px; flex: 1; display: flex; flex-direction: column; }
+    .temple-name { font-size: 18px; font-weight: 700; color: #c2410c; margin-bottom: 6px; }
+    .temple-deity { color: #d97706; font-weight: 600; font-size: 13px; margin-bottom: 10px; }
+    .temple-desc { font-size: 13px; color: #475569; line-height: 1.5; margin-bottom: 14px; }
+    
+    .temple-footer { margin-top: auto; padding-top: 12px; border-top: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+    .photo-btn { font-size: 12px; color: #2563eb; background: #eff6ff; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; border: 1px solid #bfdbfe; }
+    .temple-id { font-size: 11px; color: #94a3b8; font-weight: 500; }
+    .empty-state { text-align: center; color: #94a3b8; padding: 60px 20px; font-size: 16px; grid-column: 1 / -1; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>🛕 Temple Hierarchy Explorer</h1>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label>1. Select Country</label>
+        <select id="countrySelect"><option value="">-- Choose Country --</option></select>
+      </div>
+      <div>
+        <label>2. Select State</label>
+        <select id="stateSelect" disabled><option value="">-- Choose State --</option></select>
+      </div>
+      <div>
+        <label>3. Select City</label>
+        <select id="citySelect" disabled><option value="">-- Choose City --</option></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span class="badge" id="dataCounter">Ready</span>
+    <span style="font-size: 13px; color: #64748b;">Source: <code>all_countries_hierarchical_temples.json</code></span>
+  </div>
+
+  <div id="templesList" class="temple-grid">
+    <div class="empty-state">Pehle Country, State aur City select kijiye.</div>
+  </div>
+</div>
+
+<script>
+  const countrySelect = document.getElementById('countrySelect');
+  const stateSelect = document.getElementById('stateSelect');
+  const citySelect = document.getElementById('citySelect');
+  const templesList = document.getElementById('templesList');
+  const dataCounter = document.getElementById('dataCounter');
+
+  fetch('/api/countries?t=' + Date.now())
+    .then(r => r.json())
+    .then(data => {
+      data.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = `${c.name} (${c.code || ''}) - ${c.total_states} States`;
+        countrySelect.appendChild(opt);
+      });
+    });
+
+  countrySelect.addEventListener('change', function() {
+    stateSelect.innerHTML = '<option value="">-- Choose State --</option>';
+    citySelect.innerHTML = '<option value="">-- Choose City --</option>';
+    citySelect.disabled = true;
+    templesList.innerHTML = '<div class="empty-state">Ab State select kijiye.</div>';
+    dataCounter.textContent = 'Ready';
+    if (!this.value) return;
+
+    fetch(`/api/states?country_id=${this.value}&t=` + Date.now())
+      .then(r => r.json())
+      .then(states => {
+        states.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = `${s.name} (${s.total_cities} cities, ${s.total_temples} temples)`;
+          stateSelect.appendChild(opt);
+        });
+        stateSelect.disabled = false;
+      });
+  });
+
+  stateSelect.addEventListener('change', function() {
+    citySelect.innerHTML = '<option value="">-- Choose City --</option>';
+    templesList.innerHTML = '<div class="empty-state">Ab City select kijiye.</div>';
+    dataCounter.textContent = 'Ready';
+    if (!this.value) return;
+
+    fetch(`/api/cities?country_id=${countrySelect.value}&state_id=${this.value}&t=` + Date.now())
+      .then(r => r.json())
+      .then(cities => {
+        if (cities.length === 0) {
+          citySelect.innerHTML = '<option value="">-- No Cities Found in this State --</option>';
+          citySelect.disabled = false;
+          return;
+        }
+        citySelect.innerHTML = '<option value="">-- Choose City --</option>';
+        cities.forEach(ci => {
+          const opt = document.createElement('option');
+          opt.value = ci.id;
+          opt.textContent = `${ci.name} (${ci.total_temples} Temples)`;
+          citySelect.appendChild(opt);
+        });
+        citySelect.disabled = false;
+      });
+  });
+
+  citySelect.addEventListener('change', function() {
+    if (!this.value) return;
+    const selectedCity = citySelect.options[citySelect.selectedIndex].text.split('(')[0].trim();
+    templesList.innerHTML = '<div class="empty-state">Temples load ho rahe hain...</div>';
+
+    fetch(`/api/temples?country_id=${countrySelect.value}&state_id=${stateSelect.value}&city_id=${this.value}&t=` + Date.now())
+      .then(r => r.json())
+      .then(cityObj => {
+        const temples = cityObj.temples || [];
+        dataCounter.textContent = `Temples in ${selectedCity}: ${temples.length}`;
+
+        if (temples.length === 0) {
+          templesList.innerHTML = `<div class="empty-state">Is city (${selectedCity}) me abhi koi temple mapped nahi hai.</div>`;
+          return;
+        }
+
+        templesList.innerHTML = '';
+        temples.forEach(t => {
+          const card = document.createElement('div');
+          card.className = 'temple-card';
+          
+          const gSearch = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(t.temple_name + ' ' + selectedCity + ' temple')}`;
+          
+          let imgHtml = '';
+          if (t.image_url) {
+            imgHtml = `
+              <div class="img-container">
+                <img class="temple-img" src="${t.image_url}" alt="${t.temple_name}" onerror="this.parentElement.innerHTML='<div class=\\'fallback-box\\'>🛕</div>'">
+              </div>
+            `;
+          } else {
+            imgHtml = `<div class="img-container"><div class="fallback-box">🛕</div></div>`;
+          }
+
+          card.innerHTML = `
+            ${imgHtml}
+            <div class="temple-body">
+              <div class="temple-name">${t.temple_name}</div>
+              <div class="temple-deity">Deity: ${t.deity || 'Hindu Deity'}</div>
+              <div class="temple-desc">${t.why_famous ? t.why_famous.substring(0, 140) + '...' : ''}</div>
+              <div class="temple-footer">
+                <a href="${gSearch}" target="_blank" class="photo-btn">🔍 View Real Photos</a>
+                <span class="temple-id">ID: #${t.temple_id}</span>
+              </div>
+            </div>
+          `;
+          templesList.appendChild(card);
+        });
+      });
+  });
+</script>
+</body>
+</html>
