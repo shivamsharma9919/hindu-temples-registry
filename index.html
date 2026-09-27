@@ -61,7 +61,7 @@
 
   <div class="status-bar">
     <span class="badge" id="dataCounter">Downloading Data (~60MB)...</span>
-    <span style="font-size: 13px; color: #64748b;">Direct Hosted Same-Origin Dataset v4</span>
+    <span style="font-size: 13px; color: #64748b;">Fast CDN v5</span>
   </div>
 
   <div id="templesList" class="temple-grid">
@@ -70,7 +70,8 @@
 </div>
 
 <script>
-  const DATA_URL = './all_countries_hierarchical_temples.json.gz';
+  // Fast Statically CDN endpoint for GitHub Releases (Automatic CORS bypass)
+  const DATA_URL = 'https://cdn.staticaly.com/gh/shivamsharma9919/hindu-temples-registry/v1.0/all_countries_hierarchical_temples.json.gz';
 
   const countrySelect = document.getElementById('countrySelect');
   const stateSelect = document.getElementById('stateSelect');
@@ -82,7 +83,7 @@
 
   fetch(DATA_URL)
     .then(res => {
-      if (!res.ok) throw new Error('Data file download failed: HTTP ' + res.status);
+      if (!res.ok) throw new Error('CDN download failed: HTTP ' + res.status);
       return res.arrayBuffer();
     })
     .then(buffer => {
@@ -90,7 +91,6 @@
       const u8 = new Uint8Array(buffer);
       let jsonText;
 
-      // GZIP magic header 0x1f 0x8b check
       if (u8[0] === 0x1f && u8[1] === 0x8b) {
         jsonText = pako.ungzip(u8, { to: 'string' });
       } else {
