@@ -62,7 +62,7 @@
 
   <div class="status-bar">
     <span class="badge" id="dataCounter">Downloading Data (~60MB)...</span>
-    <span style="font-size: 13px; color: #64748b;">Source: <code>GitHub Release CDN (GZ Compressed)</code></span>
+    <span style="font-size: 13px; color: #64748b;">Source: <code>GitHub Release via High-Speed Proxy</code></span>
   </div>
 
   <div id="templesList" class="temple-grid">
@@ -71,7 +71,14 @@
 </div>
 
 <script>
-  const DATA_URL = 'https://github.com/shivamsharma9919/hindu-temples-registry/releases/download/v1.0/all_countries_hierarchical_temples.json.gz';
+  const RAW_URL = 'https://github.com/shivamsharma9919/hindu-temples-registry/releases/download/v1.0/all_countries_hierarchical_temples.json.gz';
+  
+  // CORS fallback endpoints
+  const ENDPOINTS = [
+    'https://corsproxy.io/?' + encodeURIComponent(RAW_URL),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(RAW_URL),
+    RAW_URL
+  ];
 
   const countrySelect = document.getElementById('countrySelect');
   const stateSelect = document.getElementById('stateSelect');
@@ -81,25 +88,35 @@
 
   let dbData = [];
 
-  // Master compressed JSON load aur decompress karna
-  fetch(DATA_URL)
-    .then(res => {
-      if (!res.ok) throw new Error('Network error: ' + res.status);
-      return res.arrayBuffer();
-    })
+  async function fetchWithFallback() {
+    let lastError = null;
+    for (const url of ENDPOINTS) {
+      try {
+        dataCounter.textContent = 'Downloading Data (~60MB)...';
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Status ' + res.status);
+        const buffer = await res.arrayBuffer();
+        return buffer;
+      } catch (e) {
+        lastError = e;
+        console.warn('Endpoint failed, trying next:', url, e);
+      }
+    }
+    throw lastError || new Error('Failed to fetch from all endpoints');
+  }
+
+  fetchWithFallback()
     .then(buffer => {
       dataCounter.textContent = 'Decompressing Data...';
       let jsonText;
       try {
         jsonText = pako.ungzip(new Uint8Array(buffer), { to: 'string' });
       } catch (e) {
-        // Fallback agar direct binary text ho
         const decoder = new TextDecoder('utf-8');
         jsonText = decoder.decode(buffer);
       }
       dbData = JSON.parse(jsonText);
 
-      // Countries populate karna
       countrySelect.innerHTML = '<option value="">-- Choose Country --</option>';
       const countries = Array.isArray(dbData) ? dbData : (dbData.countries || []);
       
@@ -118,10 +135,9 @@
     .catch(err => {
       console.error(err);
       dataCounter.textContent = 'Failed to load data';
-      templesList.innerHTML = `<div class="empty-state" style="color: #dc2626;">Data load karne me problem aayi. Check console log.<br><small>${err.message}</small></div>`;
+      templesList.innerHTML = `<div class="empty-state" style="color: #dc2626;">Data load karne me problem aayi.<br><small>${err.message}</small></div>`;
     });
 
-  // Country change listener
   countrySelect.addEventListener('change', function() {
     stateSelect.innerHTML = '<option value="">-- Choose State --</option>';
     citySelect.innerHTML = '<option value="">-- Choose City --</option>';
@@ -147,7 +163,6 @@
     stateSelect.disabled = false;
   });
 
-  // State change listener
   stateSelect.addEventListener('change', function() {
     citySelect.innerHTML = '<option value="">-- Choose City --</option>';
     citySelect.disabled = true;
@@ -178,7 +193,6 @@
     citySelect.disabled = false;
   });
 
-  // City change listener (Temples render karna)
   citySelect.addEventListener('change', function() {
     if (this.value === '') return;
 
